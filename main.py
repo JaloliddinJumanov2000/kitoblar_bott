@@ -1,73 +1,76 @@
-"""
-Telegram Kitoblar Bot - Asosiy fayl
-"""
+
 import asyncio
 import logging
-import sys
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram import Bot, Dispatcher, F
+from aiogram.filters import Command
+from aiogram.types import Message
+from config import BOT_TOKEN, WELCOME_TEXT, HELP_TEXT
+from database import init_database
+from handlers import add_book_handler, list_books_handler, search_books_handler
 
-from config import config
-from database import init_db, close_db
-from handlers import router
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Bot va Dispatcher
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN .env faylida bo'lishi kerak!")
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
 
-async def main() -> None:
-    """Botni ishga tushirish"""
-    
-    # Konfiguratsiyani tekshirish
+@dp.message(Command("start"))
+async def start_handler(message: Message):
+    await message.answer(WELCOME_TEXT, parse_mode="Markdown")
+
+
+@dp.message(Command("help"))
+async def help_handler(message: Message):
+    await message.answer(HELP_TEXT, parse_mode="Markdown")
+
+
+@dp.message(Command("add_book"))
+async def add_book_command(message: Message):
+    await add_book_handler(message)
+
+
+@dp.message(Command("books"))
+async def books_command(message: Message):
+    await list_books_handler(message)
+
+
+@dp.message(Command("search"))
+async def search_command(message: Message):
+    await search_books_handler(message)
+
+
+@dp.message()
+async def unknown_handler(message: Message):
+    await message.answer("""
+❓ **Noma'lum komanda!**
+
+**Mavjud komandalar:**
+• `/start` - Boshlash
+• `/help` - Yordam
+• `/books` - Kitoblar ro'yxati
+• `/add_book "nom" "muallif"` - Kitob qo'shish
+• `/search kalit_so'z` - Qidirish
+
+Batafsil: `/help`
+    """, parse_mode="Markdown")
+
+
+async def main():
     try:
-        config.validate()
-    except ValueError as e:
-        logging.error(f"Konfiguratsiya xatosi: {e}")
-        sys.exit(1)
-    
-    # Logging sozlash
-    logging.basicConfig(
-        level=getattr(logging, config.LOG_LEVEL),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler('bot.log', encoding='utf-8')
-        ]
-    )
-    
-    logger = logging.getLogger(__name__)
-    logger.info("Bot ishga tushirilmoqda...")
-    
-    # Bot va Dispatcher yaratish
-    bot = Bot(
-        token=config.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    
-    dp = Dispatcher()
-    dp.include_router(router)
-    
-    try:
-        # Ma'lumotlar bazasini ishga tushirish
-        await init_db()
-        logger.info("Ma'lumotlar bazasi tayyor")
-        
-        # Botni ishga tushirish
-        logger.info("Bot ishlamoqda...")
+        init_database()
+        logger.info("🚀 Bot ishga tushmoqda...")
         await dp.start_polling(bot)
-        
+
     except Exception as e:
-        logger.error(f"Bot ishga tushirishda xato: {e}")
+        logger.error(f"❌ Bot xatoligi: {e}")
     finally:
-        # Tozalash
-        await close_db()
         await bot.session.close()
-        logger.info("Bot to'xtatildi")
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logging.info("Bot foydalanuvchi tomonidan to'xtatildi")
-    except Exception as e:
-        logging.error(f"Kutilmagan xato: {e}")
-        sys.exit(1)
+    asyncio.run(main())
